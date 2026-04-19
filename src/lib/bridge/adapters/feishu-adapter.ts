@@ -82,6 +82,8 @@ type FeishuMessageEventData = {
     message_type: string;
     content: string;
     create_time: string;
+    root_id?: string;
+    parent_id?: string;
     mentions?: Array<{
       key: string;
       id: { open_id?: string; union_id?: string; user_id?: string };
@@ -1051,6 +1053,28 @@ export class FeishuAdapter extends BaseChannelAdapter {
     // Strip @mention markers from text
     text = this.stripMentionMarkers(text);
 
+    // Resolve quoted/referenced message content when user replies to a message
+    const parentId = msg.parent_id;
+    if (parentId && this.restClient) {
+      try {
+        const quotedMsg = await this.restClient.im.message.get({
+          path: { message_id: parentId },
+        });
+        const item = quotedMsg?.data?.items?.[0];
+        if (item?.body?.content) {
+          const quotedText = this.extractPlainTextFromMessage({
+            msg_type: item.msg_type,
+            body: { content: item.body.content },
+          });
+          if (quotedText) {
+            text = `[引用: ${quotedText.slice(0, 500)}]\n${text}`;
+          }
+        }
+      } catch (err) {
+        console.warn('[feishu-adapter] Failed to fetch quoted message:', err instanceof Error ? err.message : err);
+      }
+    }
+
     if (!text.trim() && attachments.length === 0) return;
 
     const timestamp = parseInt(msg.create_time, 10) || Date.now();
@@ -1108,6 +1132,29 @@ export class FeishuAdapter extends BaseChannelAdapter {
   }
 
   // ── Content parsing ─────────────────────────────────────────
+
+  /**
+   * Extract plain text from a message fetched via im.message.get API.
+   * Handles text, post, and other simple message types.
+   */
+  private extractPlainTextFromMessage(msgData: { msg_type?: string; body?: { content?: string } }): string {
+    if (!msgData?.body?.content || !msgData.msg_type) return '';
+    try {
+      const content = msgData.body.content;
+      if (msgData.msg_type === 'text') {
+        const parsed = JSON.parse(content);
+        return parsed.text || '';
+      }
+      if (msgData.msg_type === 'post') {
+        const { extractedText } = this.parsePostContent(content);
+        return extractedText;
+      }
+      // For other types, try to extract what we can
+      return '';
+    } catch {
+      return '';
+    }
+  }
 
   private parseTextContent(content: string): string {
     try {
