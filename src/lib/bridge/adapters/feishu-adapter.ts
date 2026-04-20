@@ -553,14 +553,14 @@ export class FeishuAdapter extends BaseChannelAdapter {
       });
 
       // Step 2: Build and apply final card (CardKit v1 card.update)
-      // Only show footer for non-completed status (interrupted / error)
       const statusLabels: Record<string, string> = {
+        completed: '',
         interrupted: '⚠️ Interrupted',
         error: '❌ Error',
       };
       const elapsedMs = Date.now() - state.startTime;
-      const footer = status === 'completed' ? null : {
-        status: statusLabels[status] || status,
+      const footer = {
+        status: statusLabels[status] ?? status,
         elapsed: formatElapsed(elapsedMs),
       };
 
